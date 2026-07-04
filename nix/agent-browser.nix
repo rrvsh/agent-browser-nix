@@ -8,112 +8,52 @@ in
   perSystem =
     { pkgs, ... }:
     let
-      pnpm = pkgs.${versionInfo.pnpmPackage or "pnpm_10"};
-
       version = versionInfo.version;
-
+      system = pkgs.stdenv.hostPlatform.system;
+      assets = {
+        aarch64-darwin = "agent-browser-darwin-arm64";
+        x86_64-linux = "agent-browser-linux-musl-x64";
+      };
+      asset = assets.${system} or (throw "agent-browser-nix: unsupported system ${system}");
+      binary = pkgs.fetchurl {
+        url = "https://github.com/vercel-labs/agent-browser/releases/download/v${version}/${asset}";
+        hash =
+          versionInfo.binaryHashes.${system}
+            or (throw "agent-browser-nix: missing binary hash for ${system}");
+      };
       src = pkgs.fetchFromGitHub {
         owner = "vercel-labs";
         repo = "agent-browser";
         tag = "v${version}";
         hash = versionInfo.srcHash;
       };
+    in
+    {
+      packages.agent-browser = pkgs.stdenvNoCC.mkDerivation {
+        pname = "agent-browser";
+        inherit version;
 
-      # The Rust CLI embeds the dashboard UI via RustEmbed at compile time.
-      # Build the Next.js static export so it can be placed at the expected path.
-      dashboard = pkgs.stdenv.mkDerivation {
-        pname = "agent-browser-dashboard";
-        inherit version src;
-
-        nativeBuildInputs = [
-          pkgs.nodejs
-          pnpm
-          pkgs.pnpmConfigHook
-        ];
-
-        __darwinAllowLocalNetworking = true;
-
-        pnpmDeps = pkgs.fetchPnpmDeps {
-          pname = "agent-browser-dashboard";
-          inherit version src pnpm;
-          pnpmWorkspaces = [ "dashboard" ];
-          fetcherVersion = 3;
-          hash = versionInfo.pnpmDepsHash;
-        };
-
-        pnpmWorkspaces = [ "dashboard" ];
-
-        # Replace Google Fonts fetch with a local font from nixpkgs since the
-        # Nix sandbox has no network access.
-        postPatch = ''
-          substituteInPlace packages/dashboard/src/app/layout.tsx --replace-fail \
-            '{ Geist } from "next/font/google"' \
-            'localFont from "next/font/local"'
-
-          substituteInPlace packages/dashboard/src/app/layout.tsx --replace-fail \
-            'Geist({ subsets: ["latin"], variable: "--font-sans" })' \
-            'localFont({ src: "./Geist-Regular.otf", variable: "--font-sans" })'
-
-          cp "${pkgs.geist-font}/share/fonts/opentype/Geist-Regular.otf" \
-            packages/dashboard/src/app/Geist-Regular.otf
-        '';
-
-        buildPhase = ''
-          runHook preBuild
-          pnpm --filter dashboard build
-          runHook postBuild
-        '';
+        dontUnpack = true;
 
         installPhase = ''
           runHook preInstall
-          cp -r packages/dashboard/out $out
+          install -Dm755 ${binary} $out/bin/agent-browser
+          cp -r ${src}/skills $out/skills
+          cp -r ${src}/skill-data $out/skill-data
           runHook postInstall
-        '';
-      };
-    in
-    {
-      packages.agent-browser = pkgs.rustPlatform.buildRustPackage (finalAttrs: {
-        pname = "agent-browser";
-        inherit version src;
-
-        sourceRoot = "${finalAttrs.src.name}/cli";
-
-        cargoHash = versionInfo.cargoHash;
-
-        # Place the pre-built dashboard where RustEmbed expects it.
-        postUnpack = ''
-          chmod u+w source/packages/dashboard
-          cp -r ${dashboard} source/packages/dashboard/out
-        '';
-
-        # `which_exists` spawns the external `which` binary at runtime to probe
-        # for optional tools; pin it to an absolute store path.
-        postPatch = ''
-          substituteInPlace src/doctor/helpers.rs src/install.rs --replace-fail \
-            '"which"' '"${lib.getExe pkgs.which}"'
-        '';
-
-        nativeCheckInputs = [
-          pkgs.writableTmpDirAsHomeHook
-        ];
-
-        __darwinAllowLocalNetworking = true;
-
-        # The `skills` subcommand looks for `skills/` and `skill-data/` next to
-        # `bin/`, relative to the canonical exe path. See cli/src/skills.rs.
-        postInstall = ''
-          cp -r ../skills $out/skills
-          cp -r ../skill-data $out/skill-data
         '';
 
         meta = {
           description = "Headless browser automation CLI for AI agents";
           homepage = "https://github.com/vercel-labs/agent-browser";
           license = lib.licenses.asl20;
-          sourceProvenance = with lib.sourceTypes; [ fromSource ];
-          platforms = lib.platforms.linux ++ lib.platforms.darwin;
+          sourceProvenance = with lib.sourceTypes; [
+            binaryNativeCode
+            fromSource
+          ];
+          platforms = builtins.attrNames assets;
           mainProgram = "agent-browser";
         };
-      });
+      };
     };
 }

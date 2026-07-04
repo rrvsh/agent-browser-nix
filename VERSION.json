@@ -1,7 +1,8 @@
 {
   "version": "0.31.1",
   "srcHash": "sha256-uCLzNQ0NAeg1TtA6tcBhTu5VTyjkumsyiEpAhYLPQD0=",
-  "pnpmDepsHash": "sha256-+e7GKjgSn2nlXNGQVSZdsmfJ7FboCgkkW2t5g4TghaM=",
-  "cargoHash": "sha256-2td6rEG2uX8qDhcoZbvMZOjzOXTtnlxGvu4AzIALdtA=",
-  "pnpmPackage": "pnpm_11"
+  "binaryHashes": {
+    "aarch64-darwin": "sha256-/XrNF7MHH/f3WgPB7NMFAZWdnC0GO9qgWttvd6vyp78=",
+    "x86_64-linux": "sha256-t0kqPgDlJ5C/+9KQDDmSZeaoBZgnb4n7iy+/oxTMjSI="
+  }
 }
